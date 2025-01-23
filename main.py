@@ -37,9 +37,9 @@ from core import (
 
 
 REPO = """
-🤖 **Music Player**
+🤖 **Sudharma Music Player**
 
-- Repo: [GitHub](https://github.com/AsmSafone/MusicPlayer)
+- Repo: [GitHub](https://github.com/SudharmaCreatorz/MusicPlayer)
 - License: AGPL-3.0-or-later
 """
 
@@ -49,7 +49,7 @@ if config.BOT_TOKEN:
         api_id=config.API_ID,
         api_hash=config.API_HASH,
         bot_token=config.BOT_TOKEN,
-        in_memory=True,
+        in_memory=True
     )
     client = bot
 else:
@@ -600,6 +600,19 @@ async def closed_vc(_, update: Update):
         set_group(chat_id, now_playing=None, is_playing=False)
         clear_queue(chat_id)
 
+# Graceful shutdown handling
+def shutdown(*args):
+    print("Shutting down gracefully...")
+    asyncio.get_event_loop().stop()
+    client.stop()
+    exit(0)
+    
+if __name__ == "__main__":
 
-client.start()
-pytgcalls.run()
+    # Register signal handlers
+    signal.signal(signal.SIGTERM, shutdown)
+    signal.signal(signal.SIGINT, shutdown)
+
+    # Start the client
+    client.start()
+    pytgcalls.run()
