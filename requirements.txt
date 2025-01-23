@@ -1,11 +1,14 @@
+flask
 yt-dlp
 pytube
 pillow
 spotipy
 aiohttp
 aiofiles
+pyrogram
 tgcrypto
 py-tgcalls
 python-dotenv
+beautifulsoup4
 youtube-search-python
 https://github.com/PyrogramMod/PyrogramMod/archive/refs/heads/main.zip
