@@ -19,6 +19,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>
 import os
 import json
 import shutil
+import signal
+import asyncio
 from config import config
 from core.song import Song
 from pyrogram.types import Message
