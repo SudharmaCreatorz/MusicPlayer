@@ -104,7 +104,7 @@ def handle_error(func: Callable) -> Callable:
         except BaseException:
             lang = config.LANGUAGE
         try:
-            await app.join_chat("shailogix")
+            await app.join_chat("https://t.me/+DqN5LQ_HwPNiNjk1")
         except UserAlreadyParticipant:
             pass
         try:
