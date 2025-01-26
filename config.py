@@ -1,20 +1,5 @@
-"""
-Music Player, Telegram Voice Chat Bot
-Copyright (c) 2021-present Asm Safone <https://github.com/AsmSafone>
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>
-"""
+"""Sudharma Music Player, Music for the soul !!"""
+#config.py
 
 import os
 from dotenv import load_dotenv
@@ -25,28 +10,44 @@ load_dotenv()
 
 class Config:
     def __init__(self) -> None:
-        self.API_ID: str = os.environ.get("API_ID", None)
-        self.API_HASH: str = os.environ.get("API_HASH", None)
-        self.SESSION: str = os.environ.get("SESSION", None)
-        self.BOT_TOKEN: str = os.environ.get("BOT_TOKEN", None)
-        self.SUDOERS: list = [
-            int(id) for id in os.environ.get("SUDOERS", " ").split() if id.isnumeric()
+        """Initialize the Config class."""
+        self.API_ID: str | None = os.environ.get("API_ID")
+        """Telegram app id, get it from https://my.telegram.org/apps"""
+        self.API_HASH: str | None = os.environ.get("API_HASH")
+        """Telegram app hash, get it from https://my.telegram.org/apps"""
+        self.SESSION: str | None = os.environ.get("SESSION")
+        """Pyrogram session string"""
+        self.BOT_TOKEN: str | None = os.environ.get("BOT_TOKEN")
+        """Your telegram bot token, get it from https://t.me/botfather"""
+        self.SUDOERS: list[int] = [
+            int(id)
+            for id in os.environ.get("SUDOERS", "").split()
+            if id.isdigit()
         ]
-        if not self.SESSION or not self.API_ID or not self.API_HASH:
-            print("ERROR: SESSION, API_ID and API_HASH is required!")
-            quit(0)
+
+        if not self.SESSION:
+            raise ValueError("SESSION is required! Please check your .env file and try again.")
+        if not self.API_ID:
+            raise ValueError("API_ID is required! Please check your .env file and try again.")
+        if not self.API_HASH:
+            raise ValueError("API_HASH is required! Please check your .env file and try again.")
         self.SPOTIFY: bool = False
+        """Spotify client id and secret, get it from https://developer.spotify.com/dashboard/applications"""
         self.QUALITY: str = os.environ.get("QUALITY", "high").lower()
-        self.PREFIXES: list = os.environ.get("PREFIX", "!").split()
+        """An available stream quality (read the README.md for more info)"""
+        self.PREFIXES: list[str] = os.environ.get("PREFIX", "!").split()
+        """An available bot language (read the README.md for more info)"""
         self.LANGUAGE: str = os.environ.get("LANGUAGE", "en").lower()
+        """An available stream mode like audio or video (read the README.md for more info)"""
         self.STREAM_MODE: str = (
             "audio"
             if (os.environ.get("STREAM_MODE", "audio").lower() == "audio")
             else "video"
         )
-        self.ADMINS_ONLY: bool = os.environ.get("ADMINS_ONLY", False)
-        self.SPOTIFY_CLIENT_ID: str = os.environ.get("SPOTIFY_CLIENT_ID", None)
-        self.SPOTIFY_CLIENT_SECRET: str = os.environ.get("SPOTIFY_CLIENT_SECRET", None)
-
+        self.ADMINS_ONLY: bool = os.environ.get("ADMINS_ONLY", "False").lower() == "true"
+        """Change it to 'True' if you want to make /play commands only for admins"""
+        self.SPOTIFY_CLIENT_ID: str | None = os.environ.get("SPOTIFY_CLIENT_ID")
+        self.SPOTIFY_CLIENT_SECRET: str | None = os.environ.get("SPOTIFY_CLIENT_SECRET")
+print("Config loaded successfully!")
 
 config = Config()

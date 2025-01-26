@@ -1,22 +1,8 @@
-"""
-Music Player, Telegram Voice Chat Bot
-Copyright (c) 2021-present Asm Safone <https://github.com/AsmSafone>
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>
-"""
+"""Sudharma Music Player, Music for the soul !!"""
+#song.py
 
 import json
+import logging
 import asyncio
 from shlex import quote
 from subprocess import PIPE
@@ -27,7 +13,31 @@ from typing import Dict, Tuple, Union, Optional
 
 
 class Song:
+    """
+    Represents a song to be played by the bot
+
+    Attributes:
+        title (str): The title of the song
+        duration (str): The duration of the song in a human-readable format
+        thumb (str): The url of the thumbnail of the song
+        remote (str): The url of the song
+        source (str): The source of the song (url or file_id)
+        headers (dict): The headers to be used when downloading the song
+        request_msg (Message): The message that requested the song
+        requested_by (User): The user who requested the song
+        parsed (bool): Whether the song has been parsed or not
+        _retries (int): The number of times the song has been retried
+    """
+
     def __init__(self, link: Union[str, dict], request_msg: Message) -> None:
+        """
+        Initializes a new Song object
+
+        Args:
+            link (str or dict): The url or file_id of the song, or a dictionary
+                containing the song's metadata
+            request_msg (Message): The message that requested the song
+        """
         if isinstance(link, str):
             self.title: str = None
             self.duration: str = None
@@ -51,6 +61,13 @@ class Song:
             self.requested_by: User = request_msg.from_user
 
     async def parse(self) -> Tuple[bool, str]:
+        """
+        Parses the song and retrieves its metadata
+
+        Returns:
+            Tuple[bool, str]: A tuple containing a boolean indicating whether the
+                parsing was successful and a string with the reason for the failure
+        """
         if self.parsed:
             return (True, "ALREADY_PARSED")
         if self._retries >= 5:
@@ -64,6 +81,7 @@ class Song:
         try:
             video = json.loads(out.decode())
         except json.JSONDecodeError:
+            logging.warning("Failed to parse song, retrying")
             self._retries += 1
             return await self.parse()
         check_remote = await self.check_remote_url(video["url"], video["http_headers"])
@@ -79,6 +97,7 @@ class Song:
             self.parsed = True
             return (True, "PARSED")
         else:
+            logging.warning("Failed to parse song, retrying")
             self._retries += 1
             return await self.parse()
 
@@ -86,6 +105,17 @@ class Song:
     async def check_remote_url(
         path: str, headers: Optional[Dict[str, str]] = None
     ) -> bool:
+        """
+        Checks if a remote url is valid and returns a boolean indicating whether
+        the url is valid or not
+
+        Args:
+            path (str): The url to check
+            headers (dict): The headers to use when checking the url
+
+        Returns:
+            bool: Whether the url is valid or not
+        """
         try:
             session = ClientSession()
             response = await session.get(path, timeout=5, headers=headers)
@@ -100,6 +130,15 @@ class Song:
 
     @staticmethod
     def _escape(_title: str) -> str:
+        """
+        Escapes a string to prevent it from being interpreted as markdown
+
+        Args:
+            _title (str): The string to escape
+
+        Returns:
+            str: The escaped string
+        """
         title = _title
         f = ["**", "__", "`", "~~", "--"]
         for i in f:
@@ -107,4 +146,11 @@ class Song:
         return title
 
     def to_dict(self) -> Dict[str, str]:
+        """
+        Converts the song to a dictionary
+
+        Returns:
+            Dict[str, str]: A dictionary containing the song's metadata
+        """
         return {"title": self.title, "source": self.source}
+

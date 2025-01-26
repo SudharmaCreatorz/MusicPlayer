@@ -1,36 +1,45 @@
-"""
-Music Player, Telegram Voice Chat Bot
-Copyright (c) 2021-present Asm Safone <https://github.com/AsmSafone>
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>
-"""
+"""Sudharma Music Player, Music for the soul !!"""
+#main.py
 
 import os
 import json
+import random
 import shutil
 import signal
 import asyncio
-from config import config
-from core.song import Song
-from pyrogram.types import Message
+import logging
 from pytgcalls import filters as fl
+from typing import Any, Dict, List, Optional, Union
+from pytgcalls import PyTgCalls, StreamAudioEnded, StreamVideoEnded
+from pytgcalls.types import AudioQuality, VideoQuality, ChatUpdate, Update
+from pytgcalls.exceptions import NotInCallError, GroupCallNotFound, NoActiveGroupCall
 from pyrogram import Client, filters
-from pytgcalls.types import Update, ChatUpdate
-from pytgcalls.types.stream import StreamAudioEnded, StreamVideoEnded
-from core.decorators import language, register, only_admins, handle_error
-from pytgcalls.exceptions import (
-    NotInCallError, GroupCallNotFound, NoActiveGroupCall)
+from pyrogram.types import Message
+from pyrogram.raw.types import InputPeerChannel
+
+from . import (
+    client, pytgcalls, lang, safone, config, all_groups, get_group, set_group,
+    clear_queue, get_queue, start_stream
+)
+from . import (
+    PREFIXES,
+    handle_error,
+    is_admin,
+    is_sudo,
+    language,
+    only_admins,
+    register,
+)
+from core.funcs import (
+    delete_messages,
+    extract_args,
+    check_yt_url,
+)
+from core.groups import set_title
+from yt_dlp import Song, get_spotify_playlist, get_youtube_playlist
+
+_log = logging.getLogger(__name__)
+
 from core import (
     app, ytdl, safone, search, is_sudo, is_admin, get_group, get_queue,
     pytgcalls, set_group, set_title, all_groups, clear_queue, check_yt_url,
@@ -61,26 +70,38 @@ else:
 @client.on_message(filters.command("repo", config.PREFIXES) & ~filters.bot)
 @handle_error
 async def repo(_, message: Message):
+    """
+    Send the repository link and license information.
+    """
     await message.reply_text(REPO, disable_web_page_preview=True)
 
 
 @client.on_message(filters.command("ping", config.PREFIXES) & ~filters.bot)
 @handle_error
 async def ping(_, message: Message):
+    """
+    Check the PyTgCalls ping.
+    """
     await message.reply_text(f"🤖 **Pong!**\n`{pytgcalls.ping} ms`")
 
 
 @client.on_message(filters.command("start", config.PREFIXES) & ~filters.bot)
 @language
 @handle_error
-async def start(_, message: Message, lang):
+async def start(_, message: Message, lang: Dict[str, str]):
+    """
+    Send the start message.
+    """
     await message.reply_text(lang["startText"] % message.from_user.mention)
 
 
 @client.on_message(filters.command("help", config.PREFIXES) & ~filters.bot)
 @language
 @handle_error
-async def help(_, message: Message, lang):
+async def help(_, message: Message, lang: Dict[str, str]):
+    """
+    Send the help message.
+    """
     await message.reply_text(lang["helpText"].replace("<prefix>", config.PREFIXES[0]))
 
 
@@ -88,7 +109,40 @@ async def help(_, message: Message, lang):
 @register
 @language
 @handle_error
-async def play_stream(_, message: Message, lang):
+async def play_stream(_, message: Message, lang: Dict[str, str]):
+    """
+    Play a song or a playlist.
+    """
+    chat_id = message.chat.id
+    group = get_group(chat_id)
+    if group["admins_only"]:
+        check = await is_admin(message)
+        if not check:
+            k = await message.reply_text(lang["notAllowed"])
+            return await delete_messages([message, k])
+    song = await search(message)
+    if song is None:
+        k = await message.reply_text(lang["notFound"])
+        return await delete_messages([message, k])
+    ok, status = await song.parse()
+    if not ok:
+        raise Exception(status)
+    if not group["is_playing"]:
+        set_group(chat_id, is_playing=True, now_playing=song)
+        await start_stream(song, lang)
+        await delete_messages([message])
+    else:
+        queue = get_queue(chat_id)
+        await queue.put(song)
+        k = await message.reply_text(
+            lang["addedToQueue"] % (song.title, song.source, len(queue)),
+            disable_web_page_preview=True,
+        )
+        await delete_messages([message, k])
+
+    """
+    Play a song or a playlist.
+    """
     chat_id = message.chat.id
     group = get_group(chat_id)
     if group["admins_only"]:
@@ -118,12 +172,37 @@ async def play_stream(_, message: Message, lang):
 
 
 @client.on_message(
+    filters.command(["mix", "shuffle"], config.PREFIXES) & ~filters.private
+)
+@register
+@language
+@only_admins
+@handle_error
+async def shuffle_list(_, message: Message, lang):
+    chat_id = message.chat.id
+    """
+    Shuffle the queue.
+    """
+    queue = get_queue(chat_id)
+    if len(queue) > 0:
+        random.shuffle(queue)
+        k = await message.reply_text(lang["queueShuffled"])
+    else:
+        k = await message.reply_text(lang["queueEmpty"])
+    await delete_messages([message, k])
+
+@client.on_message(
     filters.command(["radio", "stream"], config.PREFIXES) & ~filters.private
 )
 @register
 @language
 @handle_error
-async def live_stream(_, message: Message, lang):
+async def live_stream(
+    _: Client, message: Message, lang: Dict[str, str]
+) -> Optional[Union[Message, None]]:
+    """
+    Play a live stream.
+    """
     chat_id = message.chat.id
     group = get_group(chat_id)
     if group["admins_only"]:
@@ -140,18 +219,14 @@ async def live_stream(_, message: Message, lang):
     else:
         is_yt_url, url = check_yt_url(args)
         if is_yt_url:
-            meta = ytdl.extract_info(url, download=False)
-            formats = meta.get("formats", [meta])
-            for f in formats:
-                ytstreamlink = f["url"]
-            link = ytstreamlink
+            meta = (await ytdl.extract_info(url, download=False))["formats"][0]
+            ytstreamlink = meta["url"]
             song = Song(
-                {"title": "YouTube Stream", "source": link, "remote": link}, message
+                {"title": "YouTube Stream", "source": url, "remote": ytstreamlink},
+                message,
             )
         else:
-            song = Song(
-                {"title": "Live Stream", "source": args, "remote": args}, message
-            )
+            song = Song({"title": "Live Stream", "source": args, "remote": args}, message)
     ok, status = await song.parse()
     if not ok:
         raise Exception(status)
@@ -176,7 +251,12 @@ async def live_stream(_, message: Message, lang):
 @language
 @only_admins
 @handle_error
-async def skip_track(_, message: Message, lang):
+async def skip_track(
+    _: Client, message: Message, lang: Dict[str, str]
+) -> Optional[Union[Message, None]]:
+    """
+    Skip the current track.
+    """
     chat_id = message.chat.id
     group = get_group(chat_id)
     if group["loop"]:
@@ -208,7 +288,12 @@ async def skip_track(_, message: Message, lang):
 @language
 @only_admins
 @handle_error
-async def mute_vc(_, message: Message, lang):
+async def mute_vc(
+    _: Client, message: Message, lang: Dict[str, str]
+) -> Optional[Union[Message, None]]:
+    """
+    Mute the voice chat.
+    """
     chat_id = message.chat.id
     try:
         await pytgcalls.mute_stream(chat_id)
@@ -225,7 +310,12 @@ async def mute_vc(_, message: Message, lang):
 @language
 @only_admins
 @handle_error
-async def unmute_vc(_, message: Message, lang):
+async def unmute_vc(
+    _: Client, message: Message, lang: Dict[str, str]
+) -> Optional[Union[Message, None]]:
+    """
+    Unmute the voice chat.
+    """
     chat_id = message.chat.id
     try:
         await pytgcalls.unmute_stream(chat_id)
@@ -240,7 +330,12 @@ async def unmute_vc(_, message: Message, lang):
 @language
 @only_admins
 @handle_error
-async def pause_vc(_, message: Message, lang):
+async def pause_vc(
+    _: Client, message: Message, lang: Dict[str, str]
+) -> Optional[Union[Message, None]]:
+    """
+    Pause the voice chat.
+    """
     chat_id = message.chat.id
     try:
         await pytgcalls.pause_stream(chat_id)
@@ -257,7 +352,12 @@ async def pause_vc(_, message: Message, lang):
 @language
 @only_admins
 @handle_error
-async def resume_vc(_, message: Message, lang):
+async def resume_vc(
+    _: Client, message: Message, lang: Dict[str, str]
+) -> Optional[Union[Message, None]]:
+    """
+    Resume the voice chat.
+    """
     chat_id = message.chat.id
     try:
         await pytgcalls.resume_stream(chat_id)
@@ -274,7 +374,12 @@ async def resume_vc(_, message: Message, lang):
 @language
 @only_admins
 @handle_error
-async def leave_vc(_, message: Message, lang):
+async def leave_vc(
+    _: Client, message: Message, lang: Dict[str, str]
+) -> Optional[Union[Message, None]]:
+    """
+    Leave the voice chat.
+    """
     chat_id = message.chat.id
     set_group(chat_id, is_playing=False, now_playing=None)
     await set_title(message, "")
@@ -285,21 +390,35 @@ async def leave_vc(_, message: Message, lang):
     except (NoActiveGroupCall, GroupCallNotFound, NotInCallError):
         k = await message.reply_text(lang["notActive"])
     await delete_messages([message, k])
-
-
 @client.on_message(
     filters.command(["list", "queue"], config.PREFIXES) & ~filters.private
 )
 @register
 @language
 @handle_error
-async def queue_list(_, message: Message, lang):
+async def queue_list(
+    _: Client, message: Message, lang: Dict[str, str]
+) -> Optional[Union[Message, None]]:
+    """
+    Show the current queue.
+
+    Args:
+        message (Message): The message.
+        lang (Dict[str, str]): The language dictionary.
+
+    Returns:
+        Optional[Union[Message, None]]: The replied message or None.
+    """
     chat_id = message.chat.id
     queue = get_queue(chat_id)
     if len(queue) > 0:
-        k = await message.reply_text(str(queue), disable_web_page_preview=True)
+        # Create a string with the queue
+        queue_str = "\n".join([str(song) for song in queue])
+        # Reply with the queue
+        k = await message.reply_text(queue_str, disable_web_page_preview=True)
     else:
         k = await message.reply_text(lang["queueEmpty"])
+    # Delete the message and the replied message
     await delete_messages([message, k])
 
 
@@ -310,11 +429,24 @@ async def queue_list(_, message: Message, lang):
 @language
 @only_admins
 @handle_error
-async def shuffle_list(_, message: Message, lang):
+async def shuffle_list(
+    _: Client, message: Message, lang: Dict[str, str]
+) -> Optional[Union[Message, None]]:
+    """
+    Shuffle the queue.
+
+    Args:
+        message (Message): The message.
+        lang (Dict[str, str]): The language dictionary.
+
+    Returns:
+        Optional[Union[Message, None]]: The replied message or None.
+    """
     chat_id = message.chat.id
     if len(get_queue(chat_id)) > 0:
         shuffled = shuffle_queue(chat_id)
-        k = await message.reply_text(str(shuffled), disable_web_page_preview=True)
+        queue_str = "\n".join([str(song) for song in shuffled])
+        k = await message.reply_text(queue_str, disable_web_page_preview=True)
     else:
         k = await message.reply_text(lang["queueEmpty"])
     await delete_messages([message, k])
@@ -327,13 +459,25 @@ async def shuffle_list(_, message: Message, lang):
 @language
 @only_admins
 @handle_error
-async def loop_stream(_, message: Message, lang):
+async def loop_stream(
+    _: Client, message: Message, lang: Dict[str, str]
+) -> Optional[Union[Message, None]]:
+    """
+    Toggle loop mode.
+
+    Args:
+        message (Message): The message.
+        lang (Dict[str, str]): The language dictionary.
+
+    Returns:
+        Optional[Union[Message, None]]: The replied message or None.
+    """
     chat_id = message.chat.id
     group = get_group(chat_id)
     if group["loop"]:
         set_group(chat_id, loop=False)
         k = await message.reply_text(lang["loopMode"] % "Disabled")
-    elif group["loop"] == False:
+    else:
         set_group(chat_id, loop=True)
         k = await message.reply_text(lang["loopMode"] % "Enabled")
     await delete_messages([message, k])
@@ -346,7 +490,19 @@ async def loop_stream(_, message: Message, lang):
 @language
 @only_admins
 @handle_error
-async def switch_mode(_, message: Message, lang):
+async def switch_mode(
+    _: Client, message: Message, lang: Dict[str, str]
+) -> Optional[Union[Message, None]]:
+    """
+    Toggle video mode.
+
+    Args:
+        message (Message): The message.
+        lang (Dict[str, str]): The language dictionary.
+
+    Returns:
+        Optional[Union[Message, None]]: The replied message or None.
+    """
     chat_id = message.chat.id
     group = get_group(chat_id)
     if group["stream_mode"] == "audio":
@@ -365,7 +521,19 @@ async def switch_mode(_, message: Message, lang):
 @language
 @only_admins
 @handle_error
-async def admins_only(_, message: Message, lang):
+async def admins_only(
+    _: Client, message: Message, lang: Dict[str, str]
+) -> Optional[Union[Message, None]]:
+    """
+    Toggle admins only mode.
+
+    Args:
+        message (Message): The message.
+        lang (Dict[str, str]): The language dictionary.
+
+    Returns:
+        Optional[Union[Message, None]]: The replied message or None.
+    """
     chat_id = message.chat.id
     group = get_group(chat_id)
     if group["admins_only"]:
@@ -384,7 +552,19 @@ async def admins_only(_, message: Message, lang):
 @language
 @only_admins
 @handle_error
-async def set_lang(_, message: Message, lang):
+async def set_lang(
+    _: Client, message: Message, lang: Dict[str, str]
+) -> Optional[Union[Message, None]]:
+    """
+    Set the language.
+
+    Args:
+        message (Message): The message.
+        lang (Dict[str, str]): The language dictionary.
+
+    Returns:
+        Optional[Union[Message, None]]: The replied message or None.
+    """
     chat_id = message.chat.id
     lng = extract_args(message.text)
     if lng != "":
@@ -410,7 +590,19 @@ async def set_lang(_, message: Message, lang):
 @language
 @only_admins
 @handle_error
-async def export_queue(_, message: Message, lang):
+async def export_queue(
+    _: Client, message: Message, lang: Dict[str, str]
+) -> Optional[Union[Message, None]]:
+    """
+    Export the queue to a JSON file.
+
+    Args:
+        message (Message): The message.
+        lang (Dict[str, str]): The language dictionary.
+
+    Returns:
+        Optional[Union[Message, None]]: The replied message or None.
+    """
     chat_id = message.chat.id
     queue = get_queue(chat_id)
     if len(queue) > 0:
@@ -435,7 +627,19 @@ async def export_queue(_, message: Message, lang):
 @language
 @only_admins
 @handle_error
-async def import_queue(_, message: Message, lang):
+async def import_queue(
+    _: Client, message: Message, lang: Dict[str, str]
+) -> Optional[Union[Message, None]]:
+    """
+    Import a queue from a JSON file.
+
+    Args:
+        message (Message): The message.
+        lang (Dict[str, str]): The language dictionary.
+
+    Returns:
+        Optional[Union[Message, None]]: The replied message or None.
+    """
     if not message.reply_to_message or not message.reply_to_message.document:
         k = await message.reply_text(lang["replyToAFile"])
         return await delete_messages([message, k])
@@ -475,14 +679,25 @@ async def import_queue(_, message: Message, lang):
     k = await message.reply_text(lang["queueImported"] % len(temp_queue))
     await delete_messages([message, k])
 
+"""
+Module for handling all the music related commands.
+"""
+
 
 @client.on_message(
-    filters.command(["pl", "playlist"], config.PREFIXES) & ~filters.private
+    filters.command(["pl", "playlist"], PREFIXES) & ~filters.private
 )
 @register
 @language
 @handle_error
-async def import_playlist(_, message: Message, lang):
+async def import_playlist(_, message: Message, lang: Dict[str, str]) -> None:
+    """
+    Import a playlist from YouTube or Spotify.
+
+    Args:
+        message (Message): The message.
+        lang (Dict[str, str]): The language dictionary.
+    """
     chat_id = message.chat.id
     group = get_group(chat_id)
     if group["admins_only"]:
@@ -534,11 +749,18 @@ async def import_playlist(_, message: Message, lang):
 
 
 @client.on_message(
-    filters.command(["update", "restart"], config.PREFIXES) & ~filters.private
+    filters.command(["update", "restart"], PREFIXES) & ~filters.private
 )
 @language
 @handle_error
-async def update_restart(_, message: Message, lang):
+async def update_restart(_, message: Message, lang: Dict[str, str]) -> None:
+    """
+    Update the bot and restart it.
+
+    Args:
+        message (Message): The message.
+        lang (Dict[str, str]): The language dictionary.
+    """
     check = await is_sudo(message)
     if not check:
         k = await message.reply_text(lang["notAllowed"])
@@ -558,39 +780,63 @@ async def update_restart(_, message: Message, lang):
 @pytgcalls.on_update(fl.stream_end)
 @language
 @handle_error
-async def stream_end(_, update: Update, lang):
-    if isinstance(update, StreamAudioEnded) or isinstance(update, StreamVideoEnded):
-        chat_id = update.chat_id
-        group = get_group(chat_id)
-        if group["loop"]:
-            await start_stream(group["now_playing"], lang)
+async def stream_end(_, update: Update, lang: Dict[str, str]) -> None:
+    """
+    Handle the stream end event.
+
+    Args:
+        update (Update): The update.
+        lang (Dict[str, str]): The language dictionary.
+    """
+    if not isinstance(update, (StreamAudioEnded, StreamVideoEnded)):
+        return
+    chat_id = update.chat_id
+    group = get_group(chat_id)
+    if group is None:
+        print(f"Error: Group {chat_id} not found.")
+        return
+    queue = get_queue(chat_id)
+    if queue is None:
+        print(f"Error: Queue {chat_id} not found.")
+        return
+
+    if group["loop"]:
+        await start_stream(group["now_playing"], lang)
+    else:
+        if queue.qsize() > 0:
+            next_song = await queue.get()
+            if next_song is None:
+                print(f"Error: Queue {chat_id} is empty.")
+                return
+            if not next_song.parsed:
+                ok, status = await next_song.parse()
+                if not ok:
+                    raise Exception(status)
+            set_group(chat_id, now_playing=next_song)
+            await start_stream(next_song, lang)
         else:
-            queue = get_queue(chat_id)
-            if len(queue) > 0:
-                next_song = await queue.get()
-                if not next_song.parsed:
-                    ok, status = await next_song.parse()
-                    if not ok:
-                        raise Exception(status)
-                set_group(chat_id, now_playing=next_song)
-                await start_stream(next_song, lang)
-            else:
-                if safone.get(chat_id) is not None:
-                    try:
-                        await safone[chat_id].delete()
-                    except BaseException:
-                        pass
-                await set_title(chat_id, "", client=app)
-                set_group(chat_id, is_playing=False, now_playing=None)
+            if safone.get(chat_id) is not None:
                 try:
-                    await pytgcalls.leave_call(chat_id)
-                except (NoActiveGroupCall, GroupCallNotFound, NotInCallError):
+                    await safone[chat_id].delete()
+                except BaseException:
                     pass
+            await set_title(chat_id, "", client=app)
+            set_group(chat_id, is_playing=False, now_playing=None)
+            try:
+                await pytgcalls.leave_call(chat_id)
+            except (NoActiveGroupCall, GroupCallNotFound, NotInCallError):
+                pass
 
 
 @pytgcalls.on_update(fl.chat_update(ChatUpdate.Status.LEFT_CALL))
 @handle_error
-async def closed_vc(_, update: Update):
+async def closed_vc(_, update: Update) -> None:
+    """
+    Handle the chat update event.
+
+    Args:
+        update (Update): The update.
+    """
     chat_id = update.chat_id
     if chat_id not in all_groups():
         if safone.get(chat_id) is not None:
@@ -602,15 +848,18 @@ async def closed_vc(_, update: Update):
         set_group(chat_id, now_playing=None, is_playing=False)
         clear_queue(chat_id)
 
-# Graceful shutdown handling
-def shutdown(*args):
+
+def shutdown(*args) -> None:
+    """
+    Handle the shutdown signal.
+    """
     print("Shutting down gracefully...")
     asyncio.get_event_loop().stop()
     client.stop()
     exit(0)
-    
-if __name__ == "__main__":
 
+
+if __name__ == "__main__":
     # Register signal handlers
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
@@ -618,3 +867,4 @@ if __name__ == "__main__":
     # Start the client
     client.start()
     pytgcalls.run()
+

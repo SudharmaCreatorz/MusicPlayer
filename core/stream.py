@@ -1,38 +1,31 @@
-"""
-Music Player, Telegram Voice Chat Bot
-Copyright (c) 2021-present Asm Safone <https://github.com/AsmSafone>
+"""Sudharma Music Player, Music for the soul !!"""
+#stream.py
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>
-"""
-
+import logging
 import os
-from config import config
-from core.song import Song
-from pyrogram import Client
-from yt_dlp import YoutubeDL
+import sys
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+
 from pytgcalls import PyTgCalls
+
+from config import config
 from core.funcs import generate_cover
 from core.groups import get_group, set_title
-from pytgcalls.types.stream import MediaStream
-from pyrogram.raw.types import InputPeerChannel
-from pytgcalls.types import AudioQuality, VideoQuality
-from pyrogram.raw.functions.phone import CreateGroupCall
+from core.song import Song
 from pytgcalls.exceptions import GroupCallNotFound, NoActiveGroupCall
+from pytgcalls.types import AudioQuality, VideoQuality
+from pytgcalls.types.stream import MediaStream
+from pyrogram import Client, filters
+from pyrogram.errors import RPCError
+from pyrogram.raw.functions.phone import CreateGroupCall
+from pyrogram.raw.types import InputPeerChannel
+from pyrogram.types import Message, PeerChat
+from yt_dlp import YoutubeDL
 
-
-safone = {}
-ydl_opts = {
+safone: Dict[int, Message] = {}
+ydl_opts: Dict[str, Any] = {
     "quiet": True,
     "geo_bypass": True,
     "nocheckcertificate": True,
@@ -47,14 +40,22 @@ app = Client(
 ytdl = YoutubeDL(ydl_opts)
 pytgcalls = PyTgCalls(app)
 
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+    stream=sys.stdout,
+)
+logger = logging.getLogger(__name__)
 
-async def start_stream(song: Song, lang):
+
+async def start_stream(song: Song, lang: str) -> None:
+    """Starts the stream of a given song."""
     chat = song.request_msg.chat
     if safone.get(chat.id) is not None:
         try:
             await safone[chat.id].delete()
-        except BaseException:
-            pass
+        except RPCError as e:
+            logger.error(f"Error deleting message: {e}")
     infomsg = await song.request_msg.reply_text(lang["downloading"])
     try:
         await pytgcalls.play(
@@ -102,6 +103,7 @@ async def start_stream(song: Song, lang):
 
 
 def get_quality(song: Song) -> MediaStream:
+    """Returns the quality of the stream based on the configuration."""
     group = get_group(song.request_msg.chat.id)
     if group["stream_mode"] == "video":
         if config.QUALITY.lower() == "high":
@@ -126,7 +128,7 @@ def get_quality(song: Song) -> MediaStream:
                 headers=song.headers,
             )
         else:
-            print("WARNING: Invalid Quality Specified. Defaulting to High!")
+            logger.warning("Invalid Quality Specified. Defaulting to High!")
             return MediaStream(
                 song.remote,
                 AudioQuality.HIGH,
@@ -156,10 +158,11 @@ def get_quality(song: Song) -> MediaStream:
                 headers=song.headers,
             )
         else:
-            print("WARNING: Invalid Quality Specified. Defaulting to High!")
+            logger.warning("Invalid Quality Specified. Defaulting to High!")
             return MediaStream(
                 song.remote,
                 AudioQuality.HIGH,
                 video_flags=MediaStream.Flags.IGNORE,
                 headers=song.headers,
             )
+

@@ -1,45 +1,50 @@
-"""
-Music Player, Telegram Voice Chat Bot
-Copyright (c) 2021-present Asm Safone <https://github.com/AsmSafone>
+"""Sudharma Music Player, Music for the soul !!"""
+#queue.py
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>
-"""
-
+import logging
 import random
-import asyncio
+from asyncio import Queue as AsyncQueue
+from typing import Any, Iterator, List, Optional, TypeVar
+
+from pyrogram import Client
+from pyrogram.types import Message
+
+from core import Song
+
+_T = TypeVar('_T')
+
+LOGGER = logging.getLogger(__name__)
 
 
-class Queue(asyncio.Queue):
+class Queue(AsyncQueue[_T]):
+    """A queue for storing songs to be played."""
+
     def __init__(self) -> None:
+        """Initialize the queue."""
         super().__init__()
 
     def clear(self) -> None:
+        """Clear the queue."""
+        LOGGER.debug("Clearing the queue")
         self._queue.clear()
         self._init(0)
 
-    def shuffle(self) -> "Queue":
+    def shuffle(self) -> "Queue[_T]":
+        """Shuffle the queue."""
+        LOGGER.debug("Shuffling the queue")
         copy = list(self._queue.copy())
-        copy.sort(key=lambda _: random.randint(0, 999999999))
+        random.shuffle(copy)
         self.clear()
         self._queue.extend(copy)
         return self
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[_T]:
+        """Return an iterator over the queue."""
         self.__index = 0
         return self
 
-    def __next__(self):
+    def __next__(self) -> _T:
+        """Get the next item from the queue."""
         if self.__index >= len(self):
             raise StopIteration
 
@@ -47,13 +52,16 @@ class Queue(asyncio.Queue):
         self.__index += 1
         return item
 
-    def __len__(self):
+    def __len__(self) -> int:
+        """Return the length of the queue."""
         return len(self._queue)
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int) -> _T:
+        """Get an item from the queue by index."""
         return self._queue[index]
 
-    def __str__(self):
+    def __str__(self) -> str:
+        """Return a string representation of the queue."""
         queue = list(self._queue)
         string = ""
         for x, item in enumerate(queue):
@@ -63,3 +71,10 @@ class Queue(asyncio.Queue):
                 string += f"`\n...{len(queue)-10}`"
                 return string
         return string
+
+
+def get_queue(chat_id: int) -> Queue[Song]:
+    """Get the queue for a chat."""
+    LOGGER.debug("Getting the queue for chat %d", chat_id)
+    return Queue()
+
